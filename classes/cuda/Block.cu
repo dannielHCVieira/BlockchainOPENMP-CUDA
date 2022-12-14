@@ -142,8 +142,16 @@ void Block::MineBlock(uint32_t nDifficulty)
 
     _sNonce = string((const char*)block_solution);
     sHash = _CalculateHash();
-    
-    cout << "Block mined: " << sHash << endl;
+    printBlock();
+}
+
+void Block::printBlock()
+{
+    cout << "------------" << "Block" << _nIndex << "------------\n" ;
+    cout << "Nonce: " << _sNonce << "\n";
+    cout << "Hash: " << sHash << "\n";
+    cout << "Previous Hash: " << sPrevHash << "\n";
+    cout << "Time: " << _tTime << "\n";
 }
 
 inline string Block::_CalculateHash() const

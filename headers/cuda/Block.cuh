@@ -24,6 +24,8 @@ public:
 
     void generateRngSeed_CPU(unsigned long long* x);
 
+    void printBlock();
+
 private:
     uint32_t _nIndex;
     string _sNonce;

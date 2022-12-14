@@ -7,7 +7,7 @@
 
 #include <cstdint>
 #include <vector>
-#include "Block.h"
+#include "Block.cuh"
 
 using namespace std;
 

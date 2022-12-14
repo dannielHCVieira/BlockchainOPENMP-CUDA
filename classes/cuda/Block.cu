@@ -4,10 +4,11 @@
 
 #include "../../headers/cuda/Block.cuh"
 #include "../../headers/cuda/sha256_CPU.cuh"
+#include "../../headers/cuda/sha256_GPU.cuh"
 
 #define SOLUTION_LEN 25
 
-__constant__ char* characterSet[63] = { "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890" };
+__constant__ unsigned char setOfCharacter[63] = { "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890" };
 
 Block::Block(uint32_t nIndexIn, const string &sDataIn) : _nIndex(nIndexIn), _sData(sDataIn)
 {
@@ -15,6 +16,63 @@ Block::Block(uint32_t nIndexIn, const string &sDataIn) : _nIndex(nIndexIn), _sDa
     _tTime = time(nullptr);
 
     sHash = _CalculateHash();
+}
+
+__global__ void createSolutionChecker(bool* block_isSolved){
+    *block_isSolved = false;
+}
+
+
+__device__ unsigned long long generateRngSeed_GPU(unsigned long long x)
+{
+    x ^= (x << 21);
+    x ^= (x >> 35);
+    x ^= (x << 4);
+    return x;
+}
+
+
+__global__ void SHA256_CUDA(unsigned char* input_string,unsigned char* solution, bool* block_isSolved,uint32_t nDifficulty,unsigned long long seed, size_t text_len){
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned long long newSeed = seed;
+    newSeed = (unsigned long long) i + newSeed;
+
+    unsigned char digest[32], random[SOLUTION_LEN];
+
+    memset(digest, 0, SHA256::DIGEST_SIZE);
+    memset(random, 0, SOLUTION_LEN);
+
+
+    for(int j = 0; j < SOLUTION_LEN; j++){
+        newSeed = generateRngSeed_GPU(newSeed);
+        int randomIdx = (int)(newSeed % 62);
+        random[j] = setOfCharacter[randomIdx];
+    }
+
+    SHA256GPU::sha256(input_string, random, text_len, SOLUTION_LEN, digest);
+
+    for (int j = 0; j < nDifficulty; j++){
+        if(digest[j] > 0){
+            return;
+        }
+    }
+
+    if(*block_isSolved){
+        return;
+    }
+
+    *block_isSolved = true;
+    
+    for(int j = 0; j < SOLUTION_LEN; j++){
+        solution[j] = random[j];
+    }
+}
+
+void Block::generateRngSeed_CPU(unsigned long long* x)
+{
+    *x ^= (*x << 21);
+    *x ^= (*x >> 35);
+    *x ^= (*x << 4);
 }
 
 // OpenMP (GPU)
@@ -30,16 +88,19 @@ void Block::MineBlock(uint32_t nDifficulty)
      * checar se o resultado bate com a string original. Após encontrar a solução em GPU, que deve ser mais ágil que em CPU, devolveremos a 
      * resposta para a CPU que ira utilizar para criar o novo bloco.
      */
+
+    uint32_t dimGrid = 1500, dimBlock = 256;
+
     stringstream str_stream;
     str_stream << _nIndex << _tTime << sPrevHash;
 
     string str_stream_str = str_stream.str();
 
-    char* input_string = (char*)str_stream_str.c_str();
-    char* d_input;
+    unsigned char* input_string = (unsigned char*)str_stream_str.c_str();
+    unsigned char* d_input;
 
-    char* block_solution = (char*)malloc(sizeof(char) * SOLUTION_LEN);
-    char* d_solution;
+    unsigned char* block_solution = (unsigned char*)malloc(sizeof(char) * SOLUTION_LEN);
+    unsigned char* d_solution;
 
     bool* block_isSolved = (bool*)malloc(sizeof(bool));
     bool* d_isSolved;
@@ -85,57 +146,10 @@ void Block::MineBlock(uint32_t nDifficulty)
     cout << "Block mined: " << sHash << endl;
 }
 
-__global__ void createSolutionChecker(bool* block_isSolved){
-    *block_isSolved = false;
-}
-
-__global__ void SHA256_CUDA(char* input_string, char* solution, bool* isSolved,uint32_t nDifficulty,unsigned long long seed, size_t text_len){
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned long long newSeed = seed;
-    newSeed = (unsigned long long) i + newSeed;
-
-    char digest[32], random[SOLUTION_LEN];
-
-    memset(digest, 0, SHA256::DIGEST_SIZE);
-    memset(random, 0, SOLUTION_LEN);
-
-
-    for(int j = 0; j < SOLUTION_LEN; j++){
-        newSeed = generateRngSeed_GPU(newSeed);
-        int randomIdx = (int)(newSeed % 62);
-        random[j] = setOfCharacter[randomIdx];
-    }
-
-    SHA256GPU::sha256(input_string, random, text_len, SOLUTION_LEN, digest);
-
-    for (int j = 0; j < nDifficulty; j++){
-        if(digest[j] > 0){
-            return;
-        }
-    }
-
-    if(*block_isSolved){
-        return;
-    }
-
-    *block_isSolved = true;
-    
-    for(int j = 0; j < SOLUTION_LEN; j++){
-        solution[j] = random[j];
-    }
-}
-
-void Block::generateRngSeed_CPU(unsigned long long* x)
-{
-    *x ^= (*x << 21);
-    *x ^= (*x >> 35);
-    *x ^= (*x << 4);
-}
-
 inline string Block::_CalculateHash() const
 {
     stringstream ss;
-    ss << _nIndex << sPrevHash << _tTime << _sData << _nNonce;
+    ss << _nIndex << sPrevHash << _tTime << _sData << _sNonce;
     
     return sha256(ss.str());
 }

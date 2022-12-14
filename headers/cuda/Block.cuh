@@ -22,6 +22,8 @@ public:
 
     void MineBlock(uint32_t nDifficulty);
 
+    void generateRngSeed_CPU(unsigned long long* x);
+
 private:
     uint32_t _nIndex;
     string _sNonce;
